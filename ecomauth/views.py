@@ -13,6 +13,8 @@ from django.utils.http import urlsafe_base64_encode,urlsafe_base64_decode
 from django.urls import NoReverseMatch,reverse
 from django.template.loader import render_to_string
 from django.utils.encoding import force_bytes,DjangoUnicodeDecodeError,force_str
+#import password generator here
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
 #import token gerneator
 from .utils import *
 
@@ -58,22 +60,20 @@ def signup(request):
             pass
     
 
-        user_obj=User.objects.create(first_name=first_name,last_name=last_name,username=email,email=email)
+        user_obj= User.objects.create(first_name=first_name,last_name=last_name,username=email,email=email)
         user_obj.set_password(password1)
         user_obj.is_active=False
         user_obj.save()
         # print("the encode id is:",urlsafe_base64_encode(force_bytes(user_obj.pk)))
         current_site=get_current_site(request)
-        email_subject="please activate your Account"
-        
-        message=render_to_string('auths/activate.html',{
+        email_subject="Please activate your Account"
+        message = render_to_string('auths/activate.html',{
             'user':user_obj,
             'domain':'127.0.0.1:8000',
             'uid':urlsafe_base64_encode(force_bytes(
             user_obj.pk)),
             'token':generate_token.make_token(user_obj) 
-            
-        })
+              })
 
         email_from = settings.EMAIL_HOST_USER
         email_message = EmailMessage(email_subject,message,email_from,[email])
@@ -86,6 +86,7 @@ def signup(request):
     return render(request,'auths/signup.html')
 
 class ActivateAccountView(View):
+
     def get(self,request,uidb64,token):
         try:
             uid=force_str(urlsafe_base64_decode(uidb64))
@@ -120,8 +121,64 @@ def login(request):
             return HttpResponseRedirect(request.path_info)
     
     return render(request,'auths/login.html')
+
 def handleout(request):
     logout(request)
     messages.success(request,"logout successfully")
     
     return redirect('/ecomauth/login')
+
+ 
+class ResetEmailPassword(View):
+
+    def get(self,request):
+
+        return render(request,'auths/request-password.html')
+    
+    def post(self,request):
+            user_email=request.POST.get('email')
+            user=User.objects.filter(email=user_email)
+            print(user[0].pk)
+            if user.exists():
+                current_site=get_current_site(request)
+                email_from=settings.EMAIL_HOST_USER
+                email_subject="[Reset your Password!]"
+                message=render_to_string('auths/password-reset.html',{
+                  'domain': '127.0.0.1:8000',
+                  'uid':urlsafe_base64_encode(force_str(user[0].pk)),
+                  'token':PasswordResetTokenGenerator().make_token(user[0])
+
+                })
+                
+                email_message=EmailMessage(email_subject,message,email_from,[user_email])
+                EmailThread(email_message).start()
+                
+                messages.info("Reset link has been sent to your email check your inbox")
+                return render('auths/request-password.html')
+                                      
+class NewPassword(View):
+    
+    def get(request,uidb64,token):
+        context={
+            'uidb64':uidb64,
+            'token':token
+        }
+        try:
+            user_id=force_str(urlsafe_base64_decode(uidb64))
+            user=User.objects.get(pk=user_id)
+            if not PasswordResetTokenGenerator().check_token(user,token):
+                messages.warning(request,"password reset link is invalid try again")
+                return render('auths/request-password.html')
+            
+
+        except Exception as e:
+            pass
+        return render('auths/newpassword.html',context)
+
+                                         
+    
+            
+            
+            
+                                         
+                
